@@ -1,23 +1,31 @@
-# Asynchronous Systematic Strategy Framework (Project #031)
+# Asynchronous Systematic Strategy Framework (Phase 2 Portfolio)
 
-A production-grade, event-driven quantitative trading framework built from scratch in Python 3.11. This framework implements a multi-file, component-decoupled architecture to process concurrent multi-asset streams with dynamic, real-time capital allocation and defensive risk boundaries.
+A production-grade, event-driven quantitative trading framework built to simulate multi-asset execution loops, dynamic risk budgeting, and real-world market friction.
 
-## System Architecture
-The monorepo architecture enforces strict separation of concerns across 5 core decoupled modules:
-- `config.py`: Global constants, multi-asset universes, and absolute portfolio risk thresholds.
-- `data_ingress.py`: An asynchronous, non-blocking tick-generation simulation engine running on `asyncio`.
-- `alpha_gen.py`: A momentum signal processing module tracking rolling caches to issue entry and exit triggers.
-- `risk_manager.py`: A live state-machine accounting engine that sizes positions using the Kelly Criterion and recycles capital pools dynamically upon position liquidation.
-- `main.py`: The high-performance event loop orchestrator.
+## 📈 Project #031: Core Asynchronous Architecture
+The initial footprint established a decoupled, non-blocking state machine using `asyncio` to ingest streaming price vectors and manage capital allocations.
 
-## Core Mathematical Logic
-Position sizing is dynamically calculated using a modified Half-Kelly Criterion model to optimize long-term log-wealth accumulation:
+- **Allocation Math:** Implemented a Half-Kelly Criterion model to safely size positions based on a unified liquid capital pool (\$100,000 baseline).
+- **Risk Boundaries:** Enforced a hard portfolio exposure cap at 80% to protect the system against margin anomalies.
 
-$$f^* = 0.50 \times \frac{b \cdot p - q}{b}$$
+---
 
-Where:
-- $p$ = Win probability (0.54)
-- $q$ = Loss probability (0.46)
-- $b$ = Win-to-loss ratio (1.2)
+## 🚨 Project #032: Friction Simulation & Alpha Filtering (Current)
+Recognizing that "perfect execution" backtests are an illusion, this upgrade introduced real-world broker and order book dynamics to expose and correct alpha leakage.
 
-The system enforces a hard `MAX_PORTFOLIO_EXPOSURE` at 80% of total capital to protect the fund from over-leveraging anomalies.
+### 1. Execution Friction Models
+- **Stochastic Slippage:** Implemented a random-variance slippage model (up to 15 basis points) that degrades execution prices (fills entries higher on longs and liquidates exits lower).
+- **Fixed Commissions:** Injected a flat \$2.00 broker ticket fee per execution.
+
+### 2. Alpha Defense Framework
+Initial runs revealed that high-frequency trading of micro-movements caused transaction fees to aggressively drain the capital pool. 
+
+To defeat this, a **Velocity Threshold Filter** was engineered inside `alpha_gen.py`. The engine now measures absolute price delta over a 5-tick rolling window and explicitly blocks signals unless the structural price velocity can safely absorb expected transaction costs:
+
+| Asset | Minimum Price Delta Entry Threshold |
+| :--- | :--- |
+| **BTC/USD** | \$12.00 |
+| **ETH/USD** | \$1.50 |
+| **SOL/USD** | \$0.15 |
+
+*Outcome: Reduced over-trading frequency, minimized slippage metrics, and preserved capital pool longevity during market chop.*

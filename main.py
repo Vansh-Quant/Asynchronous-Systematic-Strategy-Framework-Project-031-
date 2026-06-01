@@ -25,18 +25,19 @@ async def core_execution_loop():
         signal = alpha.process_tick(tick_vector)
         
         if signal:
-                # Phase B: Pass verified alpha signals to the risk engine
-                allocation_size = risk.calculate_allocation(signal)
+            # Phase B: Pass verified alpha signals to the risk engine
+            allocation_size = risk.calculate_allocation(signal)
+            
+            if allocation_size > 0:
+                # Capture the realistic executed price back from the risk manager
+                filled_price = risk.update_allocated_risk(signal['asset'], signal['direction'], signal['price'], allocation_size)
                 
-                if allocation_size > 0:
-                    # Update system state mapping with the full execution metrics
-                    risk.update_allocated_risk(signal['asset'], signal['direction'], signal['price'], allocation_size)
-                    
-                    print(f"[EXECUTION SUITE] TIME: {tick_vector['timestamp']:.2f} | "
-                        f"ASSET: {signal['asset']} | DIR: {signal['direction']} | "
-                        f"PRICE: ${signal['price']} | ALLOCATION: ${allocation_size:,.2f} LOCKED")
-                elif signal['direction'] != "EXIT":
-                    print(f"[RISK REJECTION] Signal generated for {signal['asset']} but blocked by exposure caps.")
+                print(f"[EXECUTION SUITE] TIME: {tick_vector['timestamp']:.2f} | "
+                      f"ASSET: {signal['asset']} | DIR: {signal['direction']} | "
+                      f"Stream Price: ${signal['price']:.2f} -> Filled Price: ${filled_price:.2f} | "
+                      f"ALLOCATION: ${allocation_size:,.2f} LOCKED")
+            elif signal['direction'] != "EXIT":
+                print(f"[RISK REJECTION] Signal generated for {signal['asset']} but blocked by exposure caps.")
 if __name__ == "__main__":
     # Initialize the high-performance async engine loop context
     try:
