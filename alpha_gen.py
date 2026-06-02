@@ -1,18 +1,22 @@
 # alpha_gen.py
 """
-Alpha Generation Engine - Threshold Filter Upgrade
-Generates directional signals only when momentum exceeds execution friction baselines.
+Alpha Generation Engine - Dual Moving Average Cross Loop
+Utilizes vectorized lookbacks to isolate macro trends and reject micro-noise.
 """
 
 class AlphaGenerator:
     def __init__(self):
-        # Independent price history queues for each asset tracking a 5-tick rolling window
+        # Rolling price cache for multi-asset processing
         self.price_history = {}
-        # MINIMUM PRICE CHANGE REQUIREMENT (Filters out low-alpha slippage traps)
-        self.MIN_DELTA_THRESHOLD = {
-            "BTC/USD": 12.00,  # Price must move at least $12.00 over 5 ticks to enter
-            "ETH/USD": 1.50,   # Price must move at least $1.50 over 5 ticks to enter
-            "SOL/USD": 0.15    # Price must move at least $0.15 over 5 ticks to enter
+        # Dynamic lookback parameters
+        self.FAST_WINDOW = 5
+        self.SLOW_WINDOW = 15
+        
+        # Absolute price velocity thresholds required to justify execution friction
+        self.MIN_VELOCITY_THRESHOLD = {
+            "BTC/USD": 8.00,
+            "ETH/USD": 1.00,
+            "SOL/USD": 0.10
         }
 
     def process_tick(self, tick: dict) -> dict | None:
@@ -22,35 +26,35 @@ class AlphaGenerator:
         if asset not in self.price_history:
             self.price_history[asset] = []
 
-        # Maintain a tight rolling lookback horizon
         self.price_history[asset].append(price)
-        if len(self.price_history[asset]) > 5:
+        
+        # Keep window bounded cleanly to the max required slow lookback size
+        if len(self.price_history[asset]) > self.SLOW_WINDOW:
             self.price_history[asset].pop(0)
 
-        # We need a full history window to reliably calculate velocity thresholds
-        if len(self.price_history[asset]) < 5:
+        # Restrict execution initialization until the slow window is completely saturated
+        if len(self.price_history[asset]) < self.SLOW_WINDOW:
             return None
 
         history = self.price_history[asset]
+
+        # --- COMPUTE VECTORIZED MOVING AVERAGES ---
+        fast_ma = sum(history[-self.FAST_WINDOW:]) / self.FAST_WINDOW
+        slow_ma = sum(history[-self.SLOW_WINDOW:]) / self.SLOW_WINDOW
         
-        # Calculate the absolute structural price delta across the lookback horizon
-        total_delta = history[-1] - history[0]
-        required_threshold = self.MIN_DELTA_THRESHOLD.get(asset, 1.00)
+        # Calculate trailing momentum momentum velocity
+        recent_velocity = history[-1] - history[-3]
+        required_threshold = self.MIN_VELOCITY_THRESHOLD.get(asset, 0.50)
 
-        # Check for active open positions to handle exit conditions cleanly
-        # Note: Exits don't use filters; if the trend flips, we get out immediately to protect capital
-        is_strictly_increasing = all(x < y for x, y in zip(history, history[1:]))
-        is_strictly_decreasing = all(x > y for x, y in zip(history, history[1:]))
-
-        # --- DISCIPLINED MOMENTUM FILTER LOGIC ---
-        if is_strictly_increasing and total_delta >= required_threshold:
+        # --- EXECUTION STATE MACHINE ---
+        # Signal LONG if fast momentum crosses above slow baseline AND velocity breaks out
+        if fast_ma > slow_ma and recent_velocity >= required_threshold:
             return {"asset": asset, "direction": "LONG", "price": price}
             
-        elif is_strictly_decreasing and abs(total_delta) >= required_threshold:
+        # Signal SHORT if fast momentum breaks below slow baseline AND velocity breaks out downward
+        elif fast_ma < slow_ma and recent_velocity <= -required_threshold:
             return {"asset": asset, "direction": "SHORT", "price": price}
             
-        elif not is_strictly_increasing and not is_strictly_decreasing:
-            # If the momentum cascade breaks, fire an exit instantly
+        # Clear out positions immediately if moving averages converge (loss of momentum edge)
+        else:
             return {"asset": asset, "direction": "EXIT", "price": price}
-
-        return None
